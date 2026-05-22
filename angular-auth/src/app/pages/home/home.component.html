@@ -1,0 +1,206 @@
+<div class="min-h-screen bg-primary-50 px-4 py-10">
+  <div class="max-w-3xl mx-auto">
+    <!-- Header -->
+    <h1 class="text-3xl font-bold text-primary-700 text-center">
+      Players List
+    </h1>
+
+    <!-- Loading -->
+    <div *ngIf="loading()" class="text-center mt-10">
+      <p class="text-gray-500">Loading players...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="!loading() && players().length === 0" class="text-center mt-10">
+      <p class="text-gray-500">No players found</p>
+    </div>
+
+    <!-- Players List -->
+    <div *ngIf="!loading() && players().length > 0" class="mt-8 space-y-4">
+      <!-- Sort Dropdown -->
+      <div class="flex justify-between items-center gap-3">
+        <div class="flex flex-row items-center gap-3">
+          <label class="text-sm text-gray-600">Sort by:</label>
+
+          <!-- Sort Field -->
+          <select
+            [(ngModel)]="pagination.sortBy"
+            (change)="handleSort()"
+            class="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">None</option>
+            <option value="name">Name</option>
+            <option value="country">Country</option>
+            <option value="club">Club</option>
+            <option value="jersey_number">Jersey No.</option>
+            <option value="goals">Goals</option>
+          </select>
+
+          <!-- Sort Direction Toggle -->
+          <button
+            (click)="toggleSortDirection()"
+            [disabled]="!pagination.sortBy"
+            class="px-3 py-1.5 rounded-lg border text-sm flex items-center gap-1 transition"
+            [ngClass]="{
+              'bg-gray-100 text-gray-400 cursor-not-allowed':
+                !pagination.sortBy,
+              'bg-blue-50 text-blue-600 border-blue-300': pagination.sortBy,
+            }"
+          >
+            <span *ngIf="pagination.sortDir === 'asc'">⬆ ASC</span>
+            <span *ngIf="pagination.sortDir === 'desc'">⬇ DESC</span>
+          </button>
+        </div>
+        <div class="flex items-center gap-1">
+          <button
+            [disabled]="pagination.currentPage === 1"
+            (click)="handlePagination('first')"
+            class="px-3 py-1 rounded-md border bg-white hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ⏪
+          </button>
+
+          <button
+            [disabled]="pagination.currentPage === 1"
+            (click)="handlePagination('prev')"
+            class="px-3 py-1 rounded-md border bg-white hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ⬅
+          </button>
+
+          <span class="px-3 py-1 text-sm text-gray-600">
+            Page {{ pagination.currentPage }}
+          </span>
+
+          <button
+            [disabled]="pagination.currentPage === totalPages"
+            (click)="handlePagination('next')"
+            class="px-3 py-1 rounded-md border bg-white hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ➡
+          </button>
+
+          <button
+            [disabled]="pagination.currentPage === totalPages"
+            (click)="handlePagination('last')"
+            class="px-3 py-1 rounded-md border bg-white hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ⏩
+          </button>
+
+          <!-- Page Size -->
+          <select
+            [(ngModel)]="pagination.pageSize"
+            (change)="handlePageSize()"
+            class="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+      </div>
+
+      <div
+        *ngFor="let player of players()"
+        class="bg-white p-5 rounded-xl shadow-md flex items-center gap-4"
+      >
+        <!-- Left: Name + Position -->
+        <div class="flex flex-col min-w-0 flex-1">
+          <!-- 👇 truncate added -->
+          <p class="font-semibold text-lg text-primary-700 truncate">
+            {{ player.name }}
+          </p>
+          <p class="text-sm text-gray-500 truncate">
+            {{ player.player_position }}
+          </p>
+        </div>
+
+        <!-- Middle: Club + Country -->
+        <div class="flex flex-col text-sm text-gray-600 w-40 flex-shrink-0">
+          <p class="truncate">
+            <span class="font-medium text-gray-700">Club:</span>
+            {{ player.club }}
+          </p>
+          <p class="truncate">
+            <span class="font-medium text-gray-700">Country:</span>
+            {{ player.country }}
+          </p>
+        </div>
+
+        <!-- Right: Stats -->
+        <div class="text-right text-sm w-28 flex-shrink-0">
+          <p class="text-gray-700">
+            <span class="font-medium">Goals:</span> {{ player.goals }}
+          </p>
+          <p class="text-gray-500">Jersey #{{ player.jersey_number }}</p>
+        </div>
+        <div class="flex flex-col items-end gap-2 w-28 flex-shrink-0">
+          <button
+            class="px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 text-xs font-medium transition"
+          >
+            Edit
+          </button>
+          <button
+            (click)="openDeleteModal(player)"
+            class="px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 text-xs font-medium transition"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logout Button -->
+    <div class="text-center mt-10">
+      <button
+        (click)="logout()"
+        class="px-4 py-2 rounded-lg bg-secondary-500 text-white hover:bg-secondary-600 transition"
+      >
+        Logout
+      </button>
+    </div>
+  </div>
+</div>
+
+<div
+  *ngIf="showDeleteModal"
+  class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+>
+  <div class="bg-white rounded-xl shadow-lg w-[350px] p-6">
+    
+    <!-- Title -->
+    <h2 class="text-lg font-semibold text-gray-800 mb-3">
+      Confirm Delete
+    </h2>
+
+    <!-- Message -->
+    <p class="text-sm text-gray-600 mb-6">
+      Are you sure you want to delete
+      <span class="font-medium text-gray-800">
+        {{ selectedPlayer?.name }}
+      </span>?
+    </p>
+
+    <!-- Actions -->
+    <div class="flex justify-end gap-3">
+      <!-- Cancel -->
+      <button
+        class="px-4 py-2 text-sm rounded-lg bg-gray-100 hover:bg-gray-200"
+        (click)="closeDeleteModal()"
+      >
+        Cancel
+      </button>
+
+      <!-- Confirm -->
+      <button
+        class="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700"
+        (click)="confirmDelete()"
+      >
+        {{deletingPlayer() ? 'Deleting...' : 'Delete'}}
+      </button>
+    </div>
+
+  </div>
+</div>

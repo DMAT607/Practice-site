@@ -1,0 +1,72 @@
+<div class="min-h-screen flex items-center justify-center bg-primary-50 px-4">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+
+    <h1 class="text-3xl font-bold text-primary-700 text-center">
+      Welcome back
+    </h1>
+
+    <p class="text-center text-gray-500 mt-2">
+      Sign in to continue
+    </p>
+
+    <form [formGroup]="loginForm" (ngSubmit)="submit()" class="mt-8 space-y-5">
+
+      <!-- Email -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Email
+        </label>
+        <input
+          type="email"
+          formControlName="email"
+          placeholder="you@example.com"
+          class="w-full rounded-lg border px-3 py-2 outline-none transition
+                 focus:border-primary-500 focus:ring-2 focus:ring-primary-200"
+        />
+
+        <p *ngIf="loginForm.controls.email.touched && loginForm.controls.email.invalid"
+           class="text-sm text-red-600 mt-1">
+          Please enter a valid email.
+        </p>
+      </div>
+
+      <!-- Password -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Password
+        </label>
+        <input
+          type="password"
+          formControlName="password"
+          placeholder="••••••••"
+          class="w-full rounded-lg border px-3 py-2 outline-none transition
+                 focus:border-primary-500 focus:ring-2 focus:ring-primary-200"
+        />
+
+        <p *ngIf="loginForm.controls.password.touched && loginForm.controls.password.invalid"
+           class="text-sm text-red-600 mt-1">
+          Password must be at least 8 characters.
+        </p>
+      </div>
+
+      <!-- Button -->
+      <button
+        type="submit"
+        class="w-full py-2.5 rounded-lg font-semibold text-white
+               bg-primary-500 hover:bg-primary-600
+               focus:outline-none focus:ring-2 focus:ring-primary-300
+               active:scale-[0.98] transition"
+      >
+        Sign in
+      </button>
+    </form>
+
+    <p class="text-center text-sm text-gray-500 mt-6">
+      Don’t have an account?
+      <a routerLink="/signup" class="text-primary-600 cursor-pointer hover:underline font-medium">
+        Create one
+      </a>
+    </p>
+
+  </div>
+</div>
