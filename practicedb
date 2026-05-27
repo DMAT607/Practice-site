@@ -1,0 +1,576 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 16.11 (Debian 16.11-1.pgdg13+1)
+-- Dumped by pg_dump version 16.9
+
+-- Started on 2026-05-27 06:23:49 UTC
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- TOC entry 7 (class 2615 OID 4484026)
+-- Name: functions; Type: SCHEMA; Schema: -; Owner: postgres
+--
+
+CREATE SCHEMA functions;
+
+
+ALTER SCHEMA functions OWNER TO postgres;
+
+--
+-- TOC entry 2 (class 3079 OID 24862)
+-- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- TOC entry 3493 (class 0 OID 0)
+-- Dependencies: 2
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
+
+
+--
+-- TOC entry 258 (class 1255 OID 4484027)
+-- Name: create_refresh_token(uuid, text, timestamp without time zone, text, text); Type: FUNCTION; Schema: functions; Owner: postgres
+--
+
+CREATE FUNCTION functions.create_refresh_token(p_user_id uuid, p_token_hash text, p_expires_at timestamp without time zone, p_ip_address text, p_user_agent text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO refresh_tokens (
+        user_id,
+        token_hash,
+        expires_at,
+        ip_address,
+        user_agent
+    )
+    VALUES (
+        p_user_id,
+        p_token_hash,
+        p_expires_at,
+        p_ip_address,
+        p_user_agent
+    );
+END;
+$$;
+
+
+ALTER FUNCTION functions.create_refresh_token(p_user_id uuid, p_token_hash text, p_expires_at timestamp without time zone, p_ip_address text, p_user_agent text) OWNER TO postgres;
+
+--
+-- TOC entry 274 (class 1255 OID 4492255)
+-- Name: get_players_list(text, text, integer, integer); Type: FUNCTION; Schema: functions; Owner: postgres
+--
+
+CREATE FUNCTION functions.get_players_list(p_sort_field text, p_sort_order text, p_currentpage integer, p_pagesize integer) RETURNS TABLE(id integer, name text, country text, club text, player_position text, goals integer, jersey_number integer)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    query TEXT;
+	offset_val integer;
+BEGIN
+    -- ✅ Whitelist column names (VERY IMPORTANT)
+    IF p_sort_field NOT IN ('name', 'country', 'club', 'position', 'goals', 'jersey_number') THEN
+        p_sort_field := 'id'; -- fallback
+    END IF;
+
+	-- ✅ Whitelist sort direction
+    IF LOWER(p_sort_order) = 'desc' THEN
+        p_sort_order := 'DESC';
+    ELSE
+        p_sort_order := 'ASC';
+    END IF;
+
+	offset_val := (p_currentpage - 1) * p_pagesize;
+    -- ✅ Build dynamic query safely
+    query := format(
+        'SELECT 
+            p.id,
+            p.name,
+            p.country,
+            p.club,
+            p.position AS player_position,
+            p.goals,
+            p.jersey_number
+         FROM public.players p
+		 WHERE is_active IS true
+         ORDER BY %I %s
+		 LIMIT %s OFFSET %s',
+        p_sort_field,
+		p_sort_order,
+		p_pagesize,
+		offset_val
+    );
+
+    -- ✅ Execute dynamic query
+    RETURN QUERY EXECUTE query;
+END;
+$$;
+
+
+ALTER FUNCTION functions.get_players_list(p_sort_field text, p_sort_order text, p_currentpage integer, p_pagesize integer) OWNER TO postgres;
+
+--
+-- TOC entry 259 (class 1255 OID 4484028)
+-- Name: get_user_by_email(text); Type: FUNCTION; Schema: functions; Owner: postgres
+--
+
+CREATE FUNCTION functions.get_user_by_email(p_email text) RETURNS TABLE(user_id bigint, email text, full_name text, mobile text)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        u.user_id,
+        u.email,
+        u.full_name,
+        u.mobile
+    FROM public.users u
+    WHERE u.email = p_email;
+END;
+$$;
+
+
+ALTER FUNCTION functions.get_user_by_email(p_email text) OWNER TO postgres;
+
+--
+-- TOC entry 273 (class 1255 OID 4492218)
+-- Name: get_user_by_token(text); Type: FUNCTION; Schema: functions; Owner: postgres
+--
+
+CREATE FUNCTION functions.get_user_by_token(p_token_hash text) RETURNS TABLE(email text, full_name text, mobile text, user_id bigint)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+	RETURN QUERY
+    SELECT u.email, u.full_name, u.mobile, u.user_id
+	FROM public.refresh_tokens rt
+	JOIN users u ON u.id = rt.user_id
+	WHERE rt.token_hash = p_token_hash
+	AND rt.revoked_at IS NULL;
+END;
+$$;
+
+
+ALTER FUNCTION functions.get_user_by_token(p_token_hash text) OWNER TO postgres;
+
+--
+-- TOC entry 271 (class 1255 OID 4484031)
+-- Name: register_user(text, text, text, text); Type: FUNCTION; Schema: functions; Owner: postgres
+--
+
+CREATE FUNCTION functions.register_user(p_full_name text, p_mobile text, p_email text, p_password_hash text) RETURNS TABLE(user_id bigint, email text)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO public.users (
+        full_name,
+        mobile,
+        email,
+        password_hash
+    )
+    VALUES (
+        p_full_name,
+        p_mobile,
+        p_email,
+        p_password_hash
+    )
+    RETURNING public.users.user_id, public.users.email;
+END;
+$$;
+
+
+ALTER FUNCTION functions.register_user(p_full_name text, p_mobile text, p_email text, p_password_hash text) OWNER TO postgres;
+
+--
+-- TOC entry 272 (class 1255 OID 4484033)
+-- Name: update_refresh_token(text); Type: FUNCTION; Schema: functions; Owner: postgres
+--
+
+CREATE FUNCTION functions.update_refresh_token(p_token_hash text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE public.refresh_tokens
+	  SET revoked_at = NOW()
+	  WHERE token_hash = p_token_hash;
+END;
+$$;
+
+
+ALTER FUNCTION functions.update_refresh_token(p_token_hash text) OWNER TO postgres;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- TOC entry 221 (class 1259 OID 4492221)
+-- Name: players; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.players (
+    id integer NOT NULL,
+    name text NOT NULL,
+    country text,
+    club text,
+    "position" text,
+    goals integer,
+    jersey_number integer,
+    is_active boolean DEFAULT true
+);
+
+
+ALTER TABLE public.players OWNER TO postgres;
+
+--
+-- TOC entry 220 (class 1259 OID 4492220)
+-- Name: players_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.players_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.players_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 3494 (class 0 OID 0)
+-- Dependencies: 220
+-- Name: players_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.players_id_seq OWNED BY public.players.id;
+
+
+--
+-- TOC entry 219 (class 1259 OID 4484005)
+-- Name: refresh_tokens; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.refresh_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    replaced_by_token text,
+    ip_address text,
+    user_agent text
+);
+
+
+ALTER TABLE public.refresh_tokens OWNER TO postgres;
+
+--
+-- TOC entry 217 (class 1259 OID 24924)
+-- Name: users; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.users (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    email text NOT NULL,
+    password_hash text NOT NULL,
+    created_at timestamp without time zone DEFAULT now(),
+    full_name text NOT NULL,
+    mobile text NOT NULL,
+    user_id bigint NOT NULL
+);
+
+
+ALTER TABLE public.users OWNER TO postgres;
+
+--
+-- TOC entry 218 (class 1259 OID 4483996)
+-- Name: users_user_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.users_user_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.users_user_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 3495 (class 0 OID 0)
+-- Dependencies: 218
+-- Name: users_user_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.users_user_id_seq OWNED BY public.users.user_id;
+
+
+--
+-- TOC entry 3325 (class 2604 OID 4492224)
+-- Name: players id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.players ALTER COLUMN id SET DEFAULT nextval('public.players_id_seq'::regclass);
+
+
+--
+-- TOC entry 3322 (class 2604 OID 4483997)
+-- Name: users user_id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users ALTER COLUMN user_id SET DEFAULT nextval('public.users_user_id_seq'::regclass);
+
+
+--
+-- TOC entry 3487 (class 0 OID 4492221)
+-- Dependencies: 221
+-- Data for Name: players; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.players (id, name, country, club, "position", goals, jersey_number, is_active) FROM stdin;
+3	Neymar Jr	Brazil	Al Hilal	Forward	440	10	t
+96	Franck Ribery	France	Retired	Forward	150	7	t
+97	Wayne Rooney	England	Retired	Forward	350	10	t
+4	Kylian Mbappe	France	PSG	Forward	300	7	t
+5	Erling Haaland	Norway	Manchester City	Forward	250	9	t
+6	Kevin De Bruyne	Belgium	Manchester City	Midfielder	150	17	t
+7	Luka Modric	Croatia	Real Madrid	Midfielder	120	10	t
+8	Toni Kroos	Germany	Real Madrid	Midfielder	85	8	t
+9	Robert Lewandowski	Poland	Barcelona	Forward	600	9	t
+10	Mohamed Salah	Egypt	Liverpool	Forward	300	11	t
+11	Virgil van Dijk	Netherlands	Liverpool	Defender	60	4	t
+12	Sergio Ramos	Spain	Sevilla	Defender	130	4	t
+13	Harry Kane	England	Bayern Munich	Forward	350	9	t
+14	Heung-min Son	South Korea	Tottenham	Forward	200	7	t
+15	Bruno Fernandes	Portugal	Manchester United	Midfielder	150	8	t
+16	Marcus Rashford	England	Manchester United	Forward	140	10	t
+17	Jude Bellingham	England	Real Madrid	Midfielder	80	5	t
+18	Pedri	Spain	Barcelona	Midfielder	40	8	t
+19	Gavi	Spain	Barcelona	Midfielder	25	6	t
+20	Vinicius Jr	Brazil	Real Madrid	Forward	120	7	t
+21	Rodrygo	Brazil	Real Madrid	Forward	90	11	t
+22	Federico Valverde	Uruguay	Real Madrid	Midfielder	70	15	t
+23	Casemiro	Brazil	Manchester United	Midfielder	80	18	t
+24	Bukayo Saka	England	Arsenal	Forward	90	7	t
+25	Martin Odegaard	Norway	Arsenal	Midfielder	80	8	t
+26	Declan Rice	England	Arsenal	Midfielder	40	41	t
+27	Jack Grealish	England	Manchester City	Midfielder	60	10	t
+28	Phil Foden	England	Manchester City	Midfielder	90	47	t
+29	Bernardo Silva	Portugal	Manchester City	Midfielder	70	20	t
+30	Ilkay Gundogan	Germany	Barcelona	Midfielder	100	22	t
+31	Joshua Kimmich	Germany	Bayern Munich	Midfielder	70	6	t
+32	Thomas Muller	Germany	Bayern Munich	Forward	250	25	t
+33	Leroy Sane	Germany	Bayern Munich	Forward	110	10	t
+34	Serge Gnabry	Germany	Bayern Munich	Forward	120	7	t
+35	Alphonso Davies	Canada	Bayern Munich	Defender	30	19	t
+36	Achraf Hakimi	Morocco	PSG	Defender	40	2	t
+37	Marquinhos	Brazil	PSG	Defender	50	5	t
+38	Marco Verratti	Italy	Al Arabi	Midfielder	20	6	t
+39	Angel Di Maria	Argentina	Benfica	Forward	180	11	t
+40	Paulo Dybala	Argentina	Roma	Forward	160	21	t
+41	Lautaro Martinez	Argentina	Inter Milan	Forward	200	10	t
+42	Romelu Lukaku	Belgium	Roma	Forward	280	90	t
+43	Nicolo Barella	Italy	Inter Milan	Midfielder	60	23	t
+44	Hakan Calhanoglu	Turkey	Inter Milan	Midfielder	90	20	t
+45	Rafael Leao	Portugal	AC Milan	Forward	120	10	t
+46	Olivier Giroud	France	AC Milan	Forward	280	9	t
+47	Theo Hernandez	France	AC Milan	Defender	40	19	t
+48	Zlatan Ibrahimovic	Sweden	Retired	Forward	500	11	t
+49	Karim Benzema	France	Al Ittihad	Forward	450	9	t
+50	N Golo Kante	France	Al Ittihad	Midfielder	30	7	t
+51	Riyad Mahrez	Algeria	Al Ahli	Forward	150	7	t
+52	Sadio Mane	Senegal	Al Nassr	Forward	220	10	t
+53	Ederson	Brazil	Manchester City	Goalkeeper	0	31	t
+54	Alisson Becker	Brazil	Liverpool	Goalkeeper	1	1	t
+55	Thibaut Courtois	Belgium	Real Madrid	Goalkeeper	0	1	t
+56	Manuel Neuer	Germany	Bayern Munich	Goalkeeper	0	1	t
+57	Jan Oblak	Slovenia	Atletico Madrid	Goalkeeper	0	13	t
+58	Marc Andre ter Stegen	Germany	Barcelona	Goalkeeper	0	1	t
+59	Gianluigi Donnarumma	Italy	PSG	Goalkeeper	0	99	t
+60	David de Gea	Spain	Free Agent	Goalkeeper	0	1	t
+61	Antoine Griezmann	France	Atletico Madrid	Forward	250	7	t
+62	Joao Felix	Portugal	Barcelona	Forward	80	14	t
+63	Frenkie de Jong	Netherlands	Barcelona	Midfielder	30	21	t
+64	Memphis Depay	Netherlands	Atletico Madrid	Forward	150	10	t
+65	Dusan Vlahovic	Serbia	Juventus	Forward	130	9	t
+66	Federico Chiesa	Italy	Juventus	Forward	90	7	t
+67	Paul Pogba	France	Juventus	Midfielder	80	10	t
+68	Jamal Musiala	Germany	Bayern Munich	Midfielder	80	42	t
+69	Christopher Nkunku	France	Chelsea	Forward	100	18	t
+70	Raheem Sterling	England	Chelsea	Forward	180	7	t
+71	Enzo Fernandez	Argentina	Chelsea	Midfielder	25	8	t
+72	Mason Mount	England	Manchester United	Midfielder	60	7	t
+73	Kai Havertz	Germany	Arsenal	Midfielder	80	29	t
+74	Gabriel Jesus	Brazil	Arsenal	Forward	140	9	t
+75	Rasmus Hojlund	Denmark	Manchester United	Forward	50	11	t
+76	Darwin Nunez	Uruguay	Liverpool	Forward	120	9	t
+77	Luis Diaz	Colombia	Liverpool	Forward	80	7	t
+78	Trent Alexander Arnold	England	Liverpool	Defender	40	66	t
+79	Andrew Robertson	Scotland	Liverpool	Defender	30	26	t
+80	Reece James	England	Chelsea	Defender	20	24	t
+81	Ben Chilwell	England	Chelsea	Defender	20	21	t
+82	Kalidou Koulibaly	Senegal	Al Hilal	Defender	30	3	t
+83	Milan Skriniar	Slovakia	PSG	Defender	20	37	t
+84	Gerard Pique	Spain	Retired	Defender	60	3	t
+98	Xavi Hernandez	Spain	Retired	Midfielder	100	6	t
+99	Andres Iniesta	Spain	Emirates Club	Midfielder	90	8	t
+85	Raphael Varane	France	Manchester United	Defender	30	19	t
+86	Lisandro Martinez	Argentina	Manchester United	Defender	10	6	t
+87	Dayot Upamecano	France	Bayern Munich	Defender	10	2	t
+88	Matthijs de Ligt	Netherlands	Bayern Munich	Defender	20	4	t
+89	Stefan de Vrij	Netherlands	Inter Milan	Defender	15	6	t
+90	Antonio Rudiger	Germany	Real Madrid	Defender	20	22	t
+91	Edin Dzeko	Bosnia	Fenerbahce	Forward	300	9	t
+92	Ciro Immobile	Italy	Lazio	Forward	300	17	t
+93	Lorenzo Insigne	Italy	Toronto FC	Forward	150	24	t
+94	Dries Mertens	Belgium	Galatasaray	Forward	200	10	t
+95	Arjen Robben	Netherlands	Retired	Forward	200	11	t
+2	Cristiano Ronaldo	Portugal	Al Nassr	Forward	850	7	t
+100	Didier Drogba	Ivory Coast	Retired	Forward	300	11	t
+1	Lionel Messi	Argentina	Inter Miami	Forward	820	10	t
+\.
+
+
+--
+-- TOC entry 3485 (class 0 OID 4484005)
+-- Dependencies: 219
+-- Data for Name: refresh_tokens; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.refresh_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at, replaced_by_token, ip_address, user_agent) FROM stdin;
+48f339b2-137f-47ce-9a35-47ac8d4ea543	636fe4e4-8441-412e-b345-1d118d7de555	424edb4674761403cfb0b5225d66da4bb6e2d9640a1868e5cfffd0a4103f8005	2026-05-28 11:06:47.939+00	2026-05-21 05:36:47.940007+00	2026-05-21 05:36:58.609503+00	\N	::1	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36
+56fabd26-a9ef-4d3f-b600-c1a47f4afc5f	636fe4e4-8441-412e-b345-1d118d7de555	057a22da27e7a09ebf02b2d8d45a2a289657425cae448d31392f0ea85668f78a	2026-05-09 12:54:13.177+00	2026-05-21 05:37:12.356629+00	2026-05-21 10:34:30.071325+00	\N	::1	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36
+b6170f51-3b9b-4533-a27a-837b146b47da	636fe4e4-8441-412e-b345-1d118d7de555	dc7b476e878b06e27d25b77aac68b8089e12223315717a881349626e417be6ef	2026-05-28 10:51:04.794+00	2026-05-21 10:51:04.795018+00	\N	\N	::1	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36
+a32bbb93-4499-45f3-ae1d-8b0b3d26db3c	636fe4e4-8441-412e-b345-1d118d7de555	4728710e60e5a45797e4a50ef1050359de4fec7ff6b2bb4fc63780bf29277ad4	2026-05-28 16:19:49.326+00	2026-05-21 10:49:49.327145+00	2026-05-21 10:51:04.79805+00	dc7b476e878b06e27d25b77aac68b8089e12223315717a881349626e417be6ef	::1	Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36
+\.
+
+
+--
+-- TOC entry 3483 (class 0 OID 24924)
+-- Dependencies: 217
+-- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.users (id, email, password_hash, created_at, full_name, mobile, user_id) FROM stdin;
+636fe4e4-8441-412e-b345-1d118d7de555	john.doe@example.com	$2b$10$16ClAzX3CcTmHHzM446PEOxH9bY6WBiCSMRCW4h3.BiF8oUV6Ubqy	2026-03-02 09:26:15.126247	John Doe	1234567890	2
+5ad53cf3-93bd-4d66-a3bc-36dd5ee53ab8	jane.doe@example.com	$2b$10$NRSe.IvQ7VXj2mvlGKrwFundJ8IdOJkFnL6rnp8JwT0tOx5a2ua3W	2026-03-16 11:13:07.969242	Jane Doe	1234567890	3
+\.
+
+
+--
+-- TOC entry 3496 (class 0 OID 0)
+-- Dependencies: 220
+-- Name: players_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.players_id_seq', 1, false);
+
+
+--
+-- TOC entry 3497 (class 0 OID 0)
+-- Dependencies: 218
+-- Name: users_user_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.users_user_id_seq', 3, true);
+
+
+--
+-- TOC entry 3338 (class 2606 OID 4492228)
+-- Name: players players_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.players
+    ADD CONSTRAINT players_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3334 (class 2606 OID 4484013)
+-- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3336 (class 2606 OID 4484015)
+-- Name: refresh_tokens refresh_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- TOC entry 3328 (class 2606 OID 24934)
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_email_key UNIQUE (email);
+
+
+--
+-- TOC entry 3330 (class 2606 OID 24932)
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3331 (class 1259 OID 4484022)
+-- Name: idx_refresh_expires_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_refresh_expires_at ON public.refresh_tokens USING btree (expires_at);
+
+
+--
+-- TOC entry 3332 (class 1259 OID 4484021)
+-- Name: idx_refresh_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_refresh_user_id ON public.refresh_tokens USING btree (user_id);
+
+
+--
+-- TOC entry 3339 (class 2606 OID 4484016)
+-- Name: refresh_tokens refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+-- Completed on 2026-05-27 06:23:49 UTC
+
+--
+-- PostgreSQL database dump complete
+--
+
